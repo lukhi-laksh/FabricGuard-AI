@@ -27,7 +27,7 @@ from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 import uvicorn
 
-# ── Eager import of detect so GPU is resolved NOW at startup ──────────────────
+# ── Eager import of detect so GPU is resolved NOW at startup ──────────────────-
 # (lazy import inside route handlers caused the uvicorn CUDA timing bug)
 import detect as _detect_module  # noqa: F401 — triggers module-level GPU check
 
