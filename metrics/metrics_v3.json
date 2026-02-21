@@ -1,0 +1,19 @@
+{
+  "version": 3,
+  "training_date": "2026-02-19 13:23:43",
+  "epochs": 45,
+  "best_val_accuracy": 0.0,
+  "mAP50": 0.0,
+  "mAP50_95": 0.0,
+  "final_precision": 0.0,
+  "final_recall": 0.0,
+  "final_f1": 0.0,
+  "class_names": [
+    "bad_stitch",
+    "hole",
+    "normal",
+    "scratch",
+    "tear"
+  ],
+  "confusion_matrix": []
+}

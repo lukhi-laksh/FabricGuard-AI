@@ -1,0 +1,22 @@
+# ── YOLOv8 detection ─────────────────────────────────────────────
+ultralytics>=8.0.0
+
+# ── PyTorch (CUDA 12.1 GPU build) ────────────────────────────────────
+# Matches your RTX 3050 + driver 581.32 + CUDA 12.1 environment
+--index-url https://download.pytorch.org/whl/cu121
+torch>=2.5.0
+torchvision>=0.20.0
+
+# ── Web framework ─────────────────────────────────────────────────
+fastapi>=0.100.0
+uvicorn>=0.22.0
+python-multipart>=0.0.6
+jinja2>=3.1.0
+
+# ── Image & video processing ──────────────────────────────────────
+pillow>=9.0.0
+opencv-python>=4.7.0
+numpy<2.0.0
+
+# ── YAML (for dataset.yaml generation) ────────────────────────────
+pyyaml>=6.0

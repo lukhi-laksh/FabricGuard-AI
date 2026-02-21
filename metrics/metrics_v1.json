@@ -1,0 +1,53 @@
+{
+  "version": 1,
+  "training_date": "2026-02-18 15:22:15",
+  "epochs": 25,
+  "best_val_accuracy": 89.13043478260869,
+  "final_precision": 0.24047619047619045,
+  "final_recall": 0.3904761904761905,
+  "final_f1": 0.2704761904761905,
+  "class_names": [
+    "bad_stitch",
+    "hole",
+    "normal",
+    "scratch",
+    "tear"
+  ],
+  "confusion_matrix": [
+    [
+      1,
+      0,
+      0,
+      0,
+      0
+    ],
+    [
+      2,
+      40,
+      0,
+      0,
+      0
+    ],
+    [
+      1,
+      0,
+      0,
+      0,
+      0
+    ],
+    [
+      0,
+      1,
+      0,
+      0,
+      0
+    ],
+    [
+      0,
+      1,
+      0,
+      0,
+      0
+    ]
+  ]
+}

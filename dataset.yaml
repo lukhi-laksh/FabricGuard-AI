@@ -1,0 +1,6 @@
+names:
+- hole
+nc: 1
+path: D:/Root/FabricGuard AI/fabricguard-pro/yolo_data
+train: train/images
+val: val/images

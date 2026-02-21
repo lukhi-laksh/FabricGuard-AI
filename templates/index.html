@@ -1,0 +1,832 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FabricGuard – Hole Detection System</title>
+    <meta name="description" content="YOLOv8m single-class fabric hole detector">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: { 'slate-950': '#020617' },
+                    fontFamily: {
+                        sans: ['Inter', 'ui-sans-serif', 'system-ui'],
+                        mono: ['"JetBrains Mono"', 'ui-monospace', 'monospace']
+                    }
+                }
+            }
+        }
+    </script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap"
+        rel="stylesheet">
+    <style>
+        body {
+            background-color: #020617;
+        }
+
+        .glow-bg::before {
+            content: '';
+            position: fixed;
+            inset: 0;
+            pointer-events: none;
+            z-index: 0;
+            background: radial-gradient(ellipse 55% 40% at 15% 0%, rgba(99, 102, 241, .15) 0%, transparent 60%),
+                radial-gradient(ellipse 45% 35% at 85% 5%, rgba(167, 139, 250, .10) 0%, transparent 60%);
+        }
+
+        .gradient-text {
+            background: linear-gradient(90deg, #818cf8, #c084fc, #e879f9);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .progress-track {
+            background: linear-gradient(90deg, #6366f1, #a78bfa);
+            border-radius: 9999px;
+            transition: width .5s ease;
+        }
+
+        .tab-active {
+            background-color: #4f46e5 !important;
+            color: #fff !important;
+        }
+
+        .drop-active {
+            border-color: #6366f1 !important;
+            background-color: rgba(99, 102, 241, .08) !important;
+        }
+
+        .log-ok {
+            color: #86efac;
+        }
+
+        .log-err {
+            color: #fca5a5;
+        }
+
+        .log-inf {
+            color: #93c5fd;
+        }
+
+        ::-webkit-scrollbar {
+            width: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #4f46e5;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+
+<body class="glow-bg font-sans text-slate-100 min-h-screen">
+    <div class="relative z-10 max-w-4xl mx-auto px-4 sm:px-6 pb-20">
+
+        <!-- HEADER -->
+        <header class="text-center py-14">
+            <div
+                class="w-16 h-16 mx-auto mb-5 rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-3xl shadow-xl shadow-indigo-900/50">
+                🔬</div>
+            <h1 class="gradient-text text-4xl sm:text-5xl font-extrabold tracking-tight mb-2">FabricGuard</h1>
+            <p class="text-slate-400 text-base mb-5">Single-Class Hole Detection &middot; YOLOv8m &middot; Production
+                Ready</p>
+            <div class="flex flex-wrap gap-2 justify-center">
+                <span
+                    class="px-3 py-1 rounded-full text-xs font-semibold bg-indigo-500/15 border border-indigo-500/30 text-indigo-300">YOLOv8m</span>
+                <span
+                    class="px-3 py-1 rounded-full text-xs font-semibold bg-indigo-500/15 border border-indigo-500/30 text-indigo-300">Red
+                    Bounding Box</span>
+                <span
+                    class="px-3 py-1 rounded-full text-xs font-semibold bg-indigo-500/15 border border-indigo-500/30 text-indigo-300">Confidence
+                    &ge; 40%</span>
+                <span
+                    class="px-3 py-1 rounded-full text-xs font-semibold bg-indigo-500/15 border border-indigo-500/30 text-indigo-300">GPU
+                    Accelerated</span>
+                <span
+                    class="px-3 py-1 rounded-full text-xs font-semibold bg-indigo-500/15 border border-indigo-500/30 text-indigo-300">AdamW
+                    &middot; patience=20</span>
+            </div>
+        </header>
+
+        <!-- ═══════════════════════════════════════
+       SECTION 1 — Dataset Upload
+  ════════════════════════════════════════ -->
+        <section class="bg-slate-900 border border-slate-800 rounded-2xl p-6 sm:p-8 mb-4">
+            <div class="flex items-center gap-3 pb-5 mb-5 border-b border-slate-800">
+                <div
+                    class="w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-sm font-bold shrink-0">
+                    1</div>
+                <h2 class="text-lg font-bold">📤 Upload Dataset</h2>
+                <span class="ml-auto text-sm text-slate-500" id="datasetSummary">Loading…</span>
+            </div>
+
+            <p class="text-slate-400 text-sm mb-5 leading-relaxed">
+                Upload fabric images and matching YOLO label files with the <strong class="text-slate-200">same
+                    filename</strong>.
+                Label format: <code
+                    class="bg-slate-800 px-1.5 py-0.5 rounded font-mono text-xs text-indigo-300">0 x_center y_center width height</code>
+                &nbsp;— empty <code
+                    class="bg-slate-800 px-1.5 py-0.5 rounded font-mono text-xs text-indigo-300">.txt</code> = no hole.
+            </p>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-5">
+                <!-- Images drop -->
+                <div id="imgDrop"
+                    class="relative border-2 border-dashed border-slate-700 rounded-xl p-8 text-center cursor-pointer transition-all duration-200 bg-slate-800/40 hover:border-indigo-500 hover:bg-indigo-500/5">
+                    <input type="file" id="imgFiles" multiple accept="image/*" onchange="handleImageFiles(this)"
+                        class="absolute inset-0 w-full h-full opacity-0 cursor-pointer">
+                    <div class="text-4xl mb-3">🖼️</div>
+                    <p class="font-semibold text-slate-200 text-sm mb-1">Fabric Images</p>
+                    <p class="text-xs text-slate-500">.jpg &middot; .png &middot; .bmp</p>
+                    <p class="text-xs font-semibold text-green-400 mt-2 min-h-[1rem]" id="imgCount"></p>
+                </div>
+                <!-- Labels drop -->
+                <div id="lblDrop"
+                    class="relative border-2 border-dashed border-slate-700 rounded-xl p-8 text-center cursor-pointer transition-all duration-200 bg-slate-800/40 hover:border-indigo-500 hover:bg-indigo-500/5">
+                    <input type="file" id="lblFiles" multiple accept=".txt" onchange="handleLabelFiles(this)"
+                        class="absolute inset-0 w-full h-full opacity-0 cursor-pointer">
+                    <div class="text-4xl mb-3">🏷️</div>
+                    <p class="font-semibold text-slate-200 text-sm mb-1">Label Files</p>
+                    <p class="text-xs text-slate-500">.txt (YOLO format)</p>
+                    <p class="text-xs font-semibold text-green-400 mt-2 min-h-[1rem]" id="lblCount"></p>
+                </div>
+            </div>
+
+            <div class="flex flex-wrap gap-2 mb-3">
+                <button onclick="uploadDataset()"
+                    class="flex items-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold rounded-xl transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0">⬆
+                    Upload &amp; Verify</button>
+                <button onclick="clearDataset()"
+                    class="flex items-center gap-2 px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 text-sm font-semibold rounded-xl border border-slate-700 transition-all duration-200 hover:-translate-y-0.5">🗑
+                    Clear</button>
+            </div>
+
+            <div id="uploadLoader" class="hidden justify-center my-4 flex">
+                <div class="w-6 h-6 border-2 border-slate-700 border-t-indigo-500 rounded-full animate-spin"></div>
+            </div>
+            <div id="uploadStatus" class="hidden px-4 py-3 rounded-xl text-sm mt-2 leading-snug"></div>
+            <div id="verifyPanel" class="hidden mt-4 bg-slate-800/60 border border-slate-700 rounded-xl p-4">
+                <div class="flex flex-wrap gap-4 mb-2" id="verifyStats"></div>
+                <div id="mismatchList"></div>
+            </div>
+        </section>
+
+        <!-- ═══════════════════════════════════════
+       SECTION 2 — Training
+  ════════════════════════════════════════ -->
+        <section class="bg-slate-900 border border-slate-800 rounded-2xl p-6 sm:p-8 mb-4">
+            <div class="flex items-center gap-3 pb-5 mb-5 border-b border-slate-800">
+                <div
+                    class="w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-sm font-bold shrink-0">
+                    2</div>
+                <h2 class="text-lg font-bold">⚙️ Train Model</h2>
+                <span class="ml-auto text-xs text-slate-500">yolov8m &middot; AdamW &middot; patience=20</span>
+            </div>
+
+            <div class="flex flex-wrap items-end gap-4 mb-6">
+                <div>
+                    <label class="block text-xs font-semibold text-indigo-300 mb-1.5 tracking-wide">EPOCHS</label>
+                    <input type="number" id="epochsInput" value="100" min="10" max="500"
+                        class="w-28 bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-slate-100 focus:outline-none focus:border-indigo-500 transition-colors font-mono">
+                </div>
+                <button id="trainBtn" onclick="startTraining()"
+                    class="flex items-center gap-2 px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-semibold rounded-xl transition-all duration-200 hover:-translate-y-0.5">
+                    🚀 Train Model
+                </button>
+                <button onclick="pollStatus()"
+                    class="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 text-sm font-semibold rounded-xl border border-slate-700 transition-all duration-200">
+                    ↻ Refresh
+                </button>
+            </div>
+
+            <!-- Progress (hidden until training starts) -->
+            <div id="trainProgress" class="hidden">
+                <!-- Progress bar -->
+                <div class="h-2.5 bg-slate-800 rounded-full overflow-hidden mb-1.5">
+                    <div id="progressBar" class="progress-track h-full" style="width:0%"></div>
+                </div>
+                <p class="text-xs text-slate-500 mb-5" id="progressLabel">Initializing…</p>
+
+                <!-- Metric cards -->
+                <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
+                    <div class="bg-slate-800 rounded-xl p-4 text-center">
+                        <p class="text-xs text-slate-500 mb-1 tracking-wider">EPOCH</p>
+                        <p class="text-xl font-bold font-mono text-purple-300" id="mEpoch">0/0</p>
+                    </div>
+                    <div class="bg-slate-800 rounded-xl p-4 text-center">
+                        <p class="text-xs text-slate-500 mb-1 tracking-wider">BOX LOSS</p>
+                        <p class="text-xl font-bold font-mono text-red-400" id="mBox">—</p>
+                    </div>
+                    <div class="bg-slate-800 rounded-xl p-4 text-center">
+                        <p class="text-xs text-slate-500 mb-1 tracking-wider">CLS LOSS</p>
+                        <p class="text-xl font-bold font-mono text-indigo-400" id="mCls">—</p>
+                    </div>
+                    <div class="bg-slate-800 rounded-xl p-4 text-center">
+                        <p class="text-xs text-slate-500 mb-1 tracking-wider">mAP50</p>
+                        <p class="text-xl font-bold font-mono text-green-400" id="mMap">—</p>
+                    </div>
+                </div>
+
+                <!-- Loss chart -->
+                <div class="bg-slate-800/60 border border-slate-700 rounded-xl p-4 mb-4">
+                    <div class="flex gap-5 mb-3">
+                        <div class="flex items-center gap-1.5 text-xs text-slate-400"><span
+                                class="w-2.5 h-2.5 rounded-full bg-red-400 inline-block"></span>Box Loss</div>
+                        <div class="flex items-center gap-1.5 text-xs text-slate-400"><span
+                                class="w-2.5 h-2.5 rounded-full bg-indigo-400 inline-block"></span>Cls Loss</div>
+                        <div class="flex items-center gap-1.5 text-xs text-slate-400"><span
+                                class="w-2.5 h-2.5 rounded-full bg-green-400 inline-block"></span>mAP50</div>
+                    </div>
+                    <canvas id="lossChart" height="110" class="w-full block"></canvas>
+                </div>
+
+                <!-- Training log -->
+                <div id="trainLog"
+                    class="bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 h-44 overflow-y-auto font-mono text-xs text-slate-400 leading-loose">
+                </div>
+            </div>
+
+            <div id="trainStatus" class="hidden px-4 py-3 rounded-xl text-sm mt-3"></div>
+        </section>
+
+        <!-- ═══════════════════════════════════════
+       SECTION 3 — Detection
+  ════════════════════════════════════════ -->
+        <section class="bg-slate-900 border border-slate-800 rounded-2xl p-6 sm:p-8">
+            <div class="flex items-center gap-3 pb-5 mb-5 border-b border-slate-800">
+                <div
+                    class="w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-sm font-bold shrink-0">
+                    3</div>
+                <h2 class="text-lg font-bold">🔍 Hole Detection</h2>
+                <span class="ml-auto text-xs text-slate-500">threshold: 40%</span>
+            </div>
+
+            <!-- Tabs -->
+            <div class="flex gap-1 p-1 bg-slate-800/60 rounded-xl w-fit mb-6">
+                <button id="tabImg" onclick="switchTab('img')"
+                    class="tab-btn tab-active px-5 py-2 rounded-lg text-sm font-semibold transition-all duration-200">🖼
+                    Image</button>
+                <button id="tabVid" onclick="switchTab('vid')"
+                    class="tab-btn px-5 py-2 rounded-lg text-sm font-semibold text-slate-400 hover:text-slate-200 transition-all duration-200">🎥
+                    Video</button>
+                <button id="tabCam" onclick="switchTab('cam')"
+                    class="tab-btn px-5 py-2 rounded-lg text-sm font-semibold text-slate-400 hover:text-slate-200 transition-all duration-200">📷
+                    Webcam</button>
+            </div>
+
+            <!-- Image tab -->
+            <div id="panelImg" class="tab-panel">
+                <div class="flex flex-wrap items-center gap-3 mb-4">
+                    <label
+                        class="flex items-center gap-2 flex-1 min-w-52 px-4 py-2.5 bg-slate-800 border border-dashed border-slate-600 hover:border-indigo-500 rounded-xl cursor-pointer transition-colors">
+                        <span class="text-slate-400 text-sm">📁</span>
+                        <span class="text-sm text-slate-400 truncate" id="imgDetName">Choose image…</span>
+                        <input type="file" accept="image/*" id="imgDetFile" onchange="updateFileName(this,'imgDetName')"
+                            class="hidden">
+                    </label>
+                    <button onclick="detectImage()"
+                        class="px-5 py-2.5 bg-red-600 hover:bg-red-500 text-white text-sm font-semibold rounded-xl transition-all duration-200 hover:-translate-y-0.5 shrink-0">
+                        🔎 Detect Hole
+                    </button>
+                </div>
+                <div id="imgLoader" class="hidden justify-center my-6 flex">
+                    <div class="w-7 h-7 border-2 border-slate-700 border-t-red-500 rounded-full animate-spin"></div>
+                </div>
+                <div id="imgResult" class="hidden rounded-xl p-5 mb-4"></div>
+                <div id="imgAnnotated"></div>
+            </div>
+
+            <!-- Video tab -->
+            <div id="panelVid" class="tab-panel hidden">
+                <div class="flex flex-wrap items-center gap-3 mb-4">
+                    <label
+                        class="flex items-center gap-2 flex-1 min-w-52 px-4 py-2.5 bg-slate-800 border border-dashed border-slate-600 hover:border-indigo-500 rounded-xl cursor-pointer transition-colors">
+                        <span class="text-slate-400 text-sm">📁</span>
+                        <span class="text-sm text-slate-400 truncate" id="vidDetName">Choose video…</span>
+                        <input type="file" accept="video/*" id="vidDetFile" onchange="updateFileName(this,'vidDetName')"
+                            class="hidden">
+                    </label>
+                    <button onclick="detectVideo()"
+                        class="px-5 py-2.5 bg-red-600 hover:bg-red-500 text-white text-sm font-semibold rounded-xl transition-all duration-200 hover:-translate-y-0.5 shrink-0">
+                        ▶ Analyze Video
+                    </button>
+                </div>
+                <div id="vidLoader" class="hidden justify-center my-6 flex">
+                    <div class="w-7 h-7 border-2 border-slate-700 border-t-red-500 rounded-full animate-spin"></div>
+                </div>
+                <div id="vidResult" class="hidden rounded-xl p-5 mb-4"></div>
+                <div id="vidFrame"></div>
+            </div>
+
+            <!-- Webcam tab -->
+            <div id="panelCam" class="tab-panel hidden">
+                <p class="text-slate-400 text-sm mb-4 leading-relaxed">
+                    Live hole detection via connected camera. Select your <strong class="text-slate-200">external USB
+                        camera</strong>
+                    below — external cameras are listed after Camera 0 (built-in).
+                </p>
+
+                <!-- Camera selector row -->
+                <div class="flex flex-wrap items-end gap-3 mb-4">
+                    <div class="flex-1 min-w-48">
+                        <label class="block text-xs font-semibold text-indigo-300 mb-1.5 tracking-wide">CAMERA
+                            DEVICE</label>
+                        <div class="flex gap-2">
+                            <select id="camSelect"
+                                class="flex-1 bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-slate-100 focus:outline-none focus:border-indigo-500 transition-colors">
+                                <option value="">— scanning cameras… —</option>
+                            </select>
+                            <button onclick="loadCameraDevices()"
+                                class="px-3 py-2.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-xl text-slate-400 hover:text-slate-200 transition-all text-sm"
+                                title="Refresh camera list">↻</button>
+                        </div>
+                    </div>
+                    <button id="camStartBtn" onclick="startWebcam()"
+                        class="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold rounded-xl transition-all duration-200 hover:-translate-y-0.5">
+                        ▶ Start
+                    </button>
+                    <button id="camStopBtn" onclick="stopWebcam()" disabled
+                        class="px-5 py-2.5 bg-slate-800 hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed text-slate-300 text-sm font-semibold rounded-xl border border-slate-700 transition-all duration-200">
+                        ⏹ Stop
+                    </button>
+                </div>
+
+                <!-- Status bar -->
+                <div id="camStatusBar" class="hidden flex-wrap items-center gap-3 mb-3">
+                    <span id="camStatusBadge"
+                        class="px-3 py-1 rounded-full text-xs font-bold tracking-wider bg-slate-700 text-slate-400">
+                        ● STOPPED
+                    </span>
+                    <div
+                        class="flex items-center gap-4 bg-slate-800/70 border border-slate-700 rounded-xl px-4 py-2 text-xs font-mono">
+                        <span class="text-slate-500">HOLES</span>
+                        <span id="camHoleCount" class="text-xl font-bold text-red-400">—</span>
+                        <span class="text-slate-600">|</span>
+                        <span class="text-slate-500">MAX CONF</span>
+                        <span id="camConfidence" class="text-xl font-bold text-indigo-300">—</span>
+                    </div>
+                </div>
+
+                <!-- Video feed -->
+                <div id="webcamFeed"
+                    class="hidden rounded-xl overflow-hidden border border-slate-700 bg-black relative">
+                    <img id="webcamImg" src="" alt="Live webcam feed" class="w-full block bg-black"
+                        style="min-height:340px;object-fit:contain;" onload="onWebcamLoad()" onerror="onWebcamError()">
+                    <!-- Connecting overlay -->
+                    <div id="camConnecting"
+                        class="absolute inset-0 flex flex-col items-center justify-center bg-slate-950/80 gap-3">
+                        <div class="w-8 h-8 border-2 border-slate-700 border-t-indigo-500 rounded-full animate-spin">
+                        </div>
+                        <p class="text-slate-400 text-sm">Connecting to camera…</p>
+                    </div>
+                </div>
+
+                <!-- Error box -->
+                <div id="camError"
+                    class="hidden mt-3 px-4 py-3 rounded-xl text-sm bg-red-500/10 border border-red-500/30 text-red-300">
+                </div>
+            </div>
+        </section>
+
+    </div>
+    <!-- ═══════════════════════════════════════════════════════════
+     JAVASCRIPT
+════════════════════════════════════════════════════════════ -->
+    <script>
+        // ── state ─────────────────────────────────────────────────────
+        let pollingInterval = null;
+        let chartHistory = [];
+        let selImages = null;
+        let selLabels = null;
+
+        window.onload = () => { refreshSummary(); setupDrag(); loadCameraDevices(); };
+
+        // ── dataset summary badge ─────────────────────────────────────
+        async function refreshSummary() {
+            try {
+                const d = await api('/dataset-info');
+                const el = document.getElementById('datasetSummary');
+                if (d.matched_pairs > 0) { el.textContent = `${d.matched_pairs} pairs ready`; el.className = 'ml-auto text-sm text-green-400'; }
+                else { el.textContent = 'No data yet'; el.className = 'ml-auto text-sm text-slate-500'; }
+            } catch { }
+        }
+
+        // ── drag & drop ───────────────────────────────────────────────
+        function setupDrag() {
+            ['imgDrop', 'lblDrop'].forEach(id => {
+                const el = document.getElementById(id);
+                el.addEventListener('dragover', e => { e.preventDefault(); el.classList.add('drop-active'); });
+                el.addEventListener('dragleave', () => el.classList.remove('drop-active'));
+                el.addEventListener('drop', e => {
+                    e.preventDefault(); el.classList.remove('drop-active');
+                    const inp = el.querySelector('input[type="file"]');
+                    if (inp) { inp.files = e.dataTransfer.files; inp.dispatchEvent(new Event('change')); }
+                });
+            });
+        }
+        function handleImageFiles(inp) { selImages = inp.files; document.getElementById('imgCount').textContent = inp.files.length ? `${inp.files.length} file(s) selected` : ''; }
+        function handleLabelFiles(inp) { selLabels = inp.files; document.getElementById('lblCount').textContent = inp.files.length ? `${inp.files.length} file(s) selected` : ''; }
+
+        // ── upload dataset ────────────────────────────────────────────
+        async function uploadDataset() {
+            const statusEl = document.getElementById('uploadStatus');
+            const loaderEl = document.getElementById('uploadLoader');
+            const panelEl = document.getElementById('verifyPanel');
+
+            if (!selImages?.length && !selLabels?.length) { setStatus(statusEl, 'Select images and/or labels first.', 'warn'); return; }
+
+            loaderEl.classList.remove('hidden'); loaderEl.classList.add('flex');
+            setStatus(statusEl, 'Uploading…', 'info');
+            panelEl.classList.add('hidden');
+
+            let last = null;
+            if (selImages?.length) {
+                const fd = new FormData();
+                for (const f of selImages) fd.append('files', f);
+                try { last = await api('/upload-images', 'POST', fd); } catch { }
+            }
+            if (selLabels?.length) {
+                const fd = new FormData();
+                for (const f of selLabels) fd.append('files', f);
+                try { last = await api('/upload-labels', 'POST', fd); } catch { }
+            }
+            const info = last || await api('/dataset-info');
+
+            loaderEl.classList.add('hidden'); loaderEl.classList.remove('flex');
+            renderVerify(info);
+            await refreshSummary();
+            setStatus(statusEl, `${info.total_images ?? 0} images · ${info.total_labels ?? 0} labels · ${info.matched_pairs ?? 0} matched`, info.ready ? 'ok' : 'warn');
+        }
+
+        function renderVerify(info) {
+            const panel = document.getElementById('verifyPanel');
+            const stats = document.getElementById('verifyStats');
+            const mlist = document.getElementById('mismatchList');
+            const m = info.matched_pairs ?? 0;
+
+            stats.innerHTML = `
+    <div class="flex items-center gap-1.5 text-sm"><span class="w-2 h-2 rounded-full bg-indigo-400 inline-block"></span><span class="text-slate-300">${info.total_images ?? 0} images</span></div>
+    <div class="flex items-center gap-1.5 text-sm"><span class="w-2 h-2 rounded-full bg-indigo-400 inline-block"></span><span class="text-slate-300">${info.total_labels ?? 0} labels</span></div>
+    <div class="flex items-center gap-1.5 text-sm"><span class="w-2 h-2 rounded-full ${m > 0 ? 'bg-green-400' : 'bg-red-400'} inline-block"></span><span class="text-slate-300">${m} matched pairs</span></div>
+    <span class="px-3 py-0.5 rounded-full text-xs font-semibold ${info.ready ? 'bg-green-500/15 border border-green-500/30 text-green-300' : 'bg-red-500/15 border border-red-500/30 text-red-300'}">${info.ready ? '✅ Ready to train' : '⚠ Fix mismatches'}</span>`;
+
+            mlist.innerHTML = '';
+            const ml = info.missing_labels ?? [];
+            const mi = info.missing_images ?? [];
+            if (ml.length) mlist.innerHTML += `<div class="mt-2 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2 font-mono text-xs text-red-300">Missing labels: ${ml.join(', ')}</div>`;
+            if (mi.length) mlist.innerHTML += `<div class="mt-2 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2 font-mono text-xs text-red-300">Missing images: ${mi.join(', ')}</div>`;
+            panel.classList.remove('hidden');
+        }
+
+        async function clearDataset() {
+            if (!confirm('Clear all uploaded images and labels?')) return;
+            await api('/clear-dataset', 'POST', new FormData());
+            ['imgCount', 'lblCount'].forEach(id => document.getElementById(id).textContent = '');
+            document.getElementById('verifyPanel').classList.add('hidden');
+            setStatus(document.getElementById('uploadStatus'), 'Dataset cleared.', 'info');
+            await refreshSummary();
+        }
+
+        // ── training ──────────────────────────────────────────────────
+        async function startTraining() {
+            const btn = document.getElementById('trainBtn');
+            const statusEl = document.getElementById('trainStatus');
+            const progEl = document.getElementById('trainProgress');
+            const epochs = document.getElementById('epochsInput').value;
+
+            btn.disabled = true; btn.textContent = '⏳ Training…';
+            progEl.classList.remove('hidden');
+            setStatus(statusEl, `Starting YOLOv8m training for ${epochs} epochs…`, 'info');
+            chartHistory = []; clearChart();
+
+            const fd = new FormData(); fd.append('epochs', epochs);
+            try {
+                const r = await api('/train', 'POST', fd);
+                if (r.message?.includes('already')) { setStatus(statusEl, r.message, 'warn'); btn.disabled = false; btn.textContent = '🚀 Train Model'; return; }
+            } catch (e) { setStatus(statusEl, 'Failed to start: ' + e.message, 'warn'); btn.disabled = false; btn.textContent = '🚀 Train Model'; return; }
+
+            if (pollingInterval) clearInterval(pollingInterval);
+            pollingInterval = setInterval(pollStatus, 1500);
+        }
+
+        async function pollStatus() {
+            try {
+                const s = await api('/train-status');
+                applyTrainingUI(s);
+                if (s.done || !s.running) {
+                    clearInterval(pollingInterval); pollingInterval = null;
+                    const btn = document.getElementById('trainBtn');
+                    btn.disabled = false; btn.textContent = '🚀 Train Model';
+                    const st = document.getElementById('trainStatus');
+                    if (s.error) setStatus(st, '❌ Error: ' + s.error, 'warn');
+                    else if (s.done) setStatus(st, `✅ Training complete! mAP50: ${s.mAP50}`, 'ok');
+                }
+            } catch { }
+        }
+
+        function applyTrainingUI(s) {
+            const total = s.total_epochs || 100;
+            const epoch = s.epoch || 0;
+            const pct = total > 0 ? Math.round(epoch / total * 100) : 0;
+            document.getElementById('progressBar').style.width = pct + '%';
+            document.getElementById('progressLabel').textContent = s.done ? 'Complete!' : (s.running ? `Epoch ${epoch} / ${total}  (${pct}%)` : 'Ready');
+            document.getElementById('mEpoch').textContent = `${epoch}/${total}`;
+            document.getElementById('mBox').textContent = s.box_loss || '—';
+            document.getElementById('mCls').textContent = s.cls_loss || '—';
+            document.getElementById('mMap').textContent = s.mAP50 || '—';
+
+            const logEl = document.getElementById('trainLog');
+            if (s.log?.length) {
+                logEl.innerHTML = s.log.map(l => {
+                    const cls = l.includes('Error') ? 'log-err' : l.includes('✓') || l.includes('complete') ? 'log-ok' : l.includes('Epoch') ? 'log-inf' : '';
+                    return `<div class="${cls}">${esc(l)}</div>`;
+                }).join('');
+                logEl.scrollTop = logEl.scrollHeight;
+            }
+            if (s.history?.length && s.history.length !== chartHistory.length) { chartHistory = s.history; drawChart(chartHistory); }
+        }
+
+        // ── chart ─────────────────────────────────────────────────────
+        function drawChart(history) {
+            const cv = document.getElementById('lossChart');
+            if (!history?.length) return;
+            const rect = cv.getBoundingClientRect();
+            cv.width = rect.width || 600; cv.height = 110;
+            const ctx = cv.getContext('2d');
+            ctx.clearRect(0, 0, cv.width, cv.height);
+            const pad = { t: 6, r: 8, b: 22, l: 36 };
+            const W = cv.width - pad.l - pad.r, H = cv.height - pad.t - pad.b;
+            const n = history.length;
+            const allLoss = history.flatMap(h => [h.box_loss, h.cls_loss]);
+            const maxL = Math.max(...allLoss, 0.01);
+
+            const xp = i => pad.l + (i / (n - 1 || 1)) * W;
+            const yl = (v, mx) => pad.t + H - (v / mx) * H;
+
+            ctx.strokeStyle = 'rgba(255,255,255,0.04)'; ctx.lineWidth = 1;
+            for (let i = 0; i <= 4; i++) { const y = pad.t + (i / 4) * H; ctx.beginPath(); ctx.moveTo(pad.l, y); ctx.lineTo(pad.l + W, y); ctx.stroke(); }
+
+            ctx.fillStyle = 'rgba(100,116,139,.8)'; ctx.font = '10px Inter'; ctx.textAlign = 'right';
+            for (let i = 0; i <= 2; i++) { const v = ((2 - i) / 2) * maxL; ctx.fillText(v.toFixed(3), pad.l - 4, pad.t + (i / 2) * H + 3); }
+
+            const line = (fn, color) => { ctx.beginPath(); ctx.strokeStyle = color; ctx.lineWidth = 1.8; ctx.lineJoin = 'round'; history.forEach((h, i) => { const x = xp(i), y = yl(fn(h), maxL); i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); }); ctx.stroke(); };
+            line(h => h.box_loss, '#f87171');
+            line(h => h.cls_loss, '#818cf8');
+
+            // mAP50 own scale
+            ctx.beginPath(); ctx.strokeStyle = '#4ade80'; ctx.lineWidth = 1.8; ctx.lineJoin = 'round';
+            history.forEach((h, i) => { const x = xp(i), y = pad.t + H - h.mAP50 * H; i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); });
+            ctx.stroke();
+
+            ctx.fillStyle = 'rgba(100,116,139,.7)'; ctx.textAlign = 'center';
+            const step = Math.ceil(n / 5);
+            history.forEach((h, i) => { if (i % step === 0 || i === n - 1) ctx.fillText(h.epoch, xp(i), cv.height - 5); });
+        }
+        function clearChart() { const cv = document.getElementById('lossChart'); cv.getContext('2d').clearRect(0, 0, cv.width, cv.height); }
+
+        // ── image detection ───────────────────────────────────────────
+        async function detectImage() {
+            const fi = document.getElementById('imgDetFile');
+            if (!fi.files.length) { alert('Select an image first.'); return; }
+            const loader = document.getElementById('imgLoader');
+            const res = document.getElementById('imgResult');
+            const ann = document.getElementById('imgAnnotated');
+            res.className = 'hidden'; ann.innerHTML = '';
+            loader.classList.remove('hidden'); loader.classList.add('flex');
+
+            const fd = new FormData(); fd.append('file', fi.files[0]);
+            let data;
+            try { data = await api('/detect-image', 'POST', fd); }
+            catch (e) { loader.classList.add('hidden'); loader.classList.remove('flex'); showResultError(res, e.message); return; }
+
+            loader.classList.add('hidden'); loader.classList.remove('flex');
+
+            if (data.error) { showResultError(res, data.message); return; }
+
+            if (data.detection_status) {
+                let detsHtml = (data.detections || []).map((d, i) => {
+                    const pct = (d.confidence * 100).toFixed(1);
+                    return `<div class="flex items-center gap-3 bg-slate-800 border-l-2 border-red-500 rounded-lg px-3 py-2.5">
+        <span class="text-slate-500 font-mono text-xs w-5">#${i + 1}</span>
+        <span class="font-bold font-mono text-red-400 text-sm w-14">${pct}%</span>
+        <div class="flex-1 h-1.5 bg-slate-700 rounded-full"><div class="h-full bg-red-400 rounded-full" style="width:${d.confidence * 100}%"></div></div>
+        <span class="font-mono text-xs text-slate-500">[${d.bbox?.join(', ')}]</span>
+      </div>`;
+                }).join('');
+                res.className = 'block rounded-xl p-5 mb-4 bg-red-500/10 border border-red-500/30';
+                res.innerHTML = `<p class="text-xl font-bold text-red-300 mb-2">🔴 ${esc(data.message)}</p>
+      <p class="text-sm text-slate-400 mb-4">Total holes: <strong class="text-slate-200">${data.hole_count}</strong> &nbsp;|&nbsp; Max confidence: <strong class="text-slate-200">${(data.max_confidence * 100).toFixed(1)}%</strong></p>
+      <div class="flex flex-col gap-2">${detsHtml}</div>`;
+                if (data.annotated_url) {
+                    ann.innerHTML = `<div class="rounded-xl overflow-hidden border border-red-500/30 mt-2">
+        <img src="${data.annotated_url}?t=${Date.now()}" alt="Annotated" class="w-full block bg-black max-h-[460px] object-contain">
+        <p class="px-4 py-2 text-xs text-slate-500 bg-slate-800/60">🔴 Red boxes mark detected holes &middot; Confidence ≥ 40%</p>
+      </div>`;
+                }
+            } else {
+                res.className = 'block rounded-xl p-5 bg-green-500/10 border border-green-500/30';
+                res.innerHTML = `<p class="text-xl font-bold text-green-300 mb-1">✅ ${esc(data.message)}</p><p class="text-sm text-slate-400">No holes detected above 40% confidence threshold.</p>`;
+            }
+        }
+
+        // ── video detection ───────────────────────────────────────────
+        async function detectVideo() {
+            const fi = document.getElementById('vidDetFile');
+            if (!fi.files.length) { alert('Select a video first.'); return; }
+            const loader = document.getElementById('vidLoader');
+            const res = document.getElementById('vidResult');
+            const frame = document.getElementById('vidFrame');
+            res.className = 'hidden'; frame.innerHTML = '';
+            loader.classList.remove('hidden'); loader.classList.add('flex');
+
+            const fd = new FormData(); fd.append('file', fi.files[0]);
+            let data;
+            try { data = await api('/detect-video', 'POST', fd); }
+            catch (e) { loader.classList.add('hidden'); loader.classList.remove('flex'); showResultError(res, e.message); return; }
+
+            loader.classList.add('hidden'); loader.classList.remove('flex');
+
+            if (data.detection_status) {
+                res.className = 'block rounded-xl p-5 mb-4 bg-red-500/10 border border-red-500/30';
+                res.innerHTML = `<p class="text-xl font-bold text-red-300 mb-2">🔴 ${esc(data.message)}</p>
+      <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-3">
+        ${[['Timestamp', data.timestamp], ['Frame', data.frame_number], ['Holes', data.hole_count], ['Confidence', (data.max_confidence * 100).toFixed(1) + '%']].map(([l, v]) => `
+        <div class="bg-slate-800 rounded-lg p-3 text-center"><p class="text-xs text-slate-500 mb-1">${l}</p><p class="font-bold font-mono text-slate-100 text-sm">${v}</p></div>`).join('')}
+      </div>`;
+                if (data.frame_url) {
+                    frame.innerHTML = `<div class="rounded-xl overflow-hidden border border-red-500/30">
+        <img src="${data.frame_url}?t=${Date.now()}" alt="Detected frame" class="w-full block bg-black max-h-[460px] object-contain">
+        <p class="px-4 py-2 text-xs text-slate-500 bg-slate-800/60">First frame where hole was detected &middot; Timestamp ${data.timestamp}</p>
+      </div>`;
+                }
+            } else {
+                res.className = 'block rounded-xl p-5 bg-green-500/10 border border-green-500/30';
+                res.innerHTML = `<p class="text-xl font-bold text-green-300 mb-1">✅ ${esc(data.message)}</p><p class="text-sm text-slate-400">No holes found throughout the video.</p>`;
+            }
+        }
+
+        // ── webcam ────────────────────────────────────────────────────
+        let _camActive = false;
+
+        async function loadCameraDevices() {
+            const sel = document.getElementById('camSelect');
+            sel.innerHTML = '<option value="">— scanning… —</option>';
+            try {
+                const data = await api('/webcam-devices');
+                const devices = data.devices || [];
+                if (!devices.length) {
+                    sel.innerHTML = '<option value="">No cameras found</option>';
+                    return;
+                }
+                sel.innerHTML = '';
+                devices.forEach(d => {
+                    const opt = document.createElement('option');
+                    opt.value = d.index;
+                    opt.textContent = d.label;
+                    // Default: prefer the LAST device (most likely the external camera)
+                    if (d.index === devices[devices.length - 1].index) opt.selected = true;
+                    sel.appendChild(opt);
+                });
+            } catch (e) {
+                sel.innerHTML = '<option value="0">Camera 0 (fallback)</option>';
+            }
+        }
+
+        function onWebcamLoad() {
+            // First frame received — hide connecting overlay
+            document.getElementById('camConnecting').classList.add('hidden');
+            setCamBadge('live');
+        }
+
+        function onWebcamError() {
+            if (!_camActive) return;
+            stopWebcam();
+            const errEl = document.getElementById('camError');
+            errEl.textContent = '⚠ Could not connect to camera. Make sure the camera is plugged in and the model is trained.';
+            errEl.classList.remove('hidden');
+        }
+
+        function setCamBadge(state) {
+            const badge = document.getElementById('camStatusBadge');
+            const map = {
+                connecting: ['bg-yellow-500/20 text-yellow-300 border border-yellow-500/30', '⏳ CONNECTING'],
+                live: ['bg-green-500/20  text-green-300  border border-green-500/30', '● LIVE'],
+                stopped: ['bg-slate-700     text-slate-400', '● STOPPED'],
+            };
+            const [cls, label] = map[state] || map.stopped;
+            badge.className = `px-3 py-1 rounded-full text-xs font-bold tracking-wider ${cls}`;
+            badge.textContent = label;
+        }
+
+        function startWebcam() {
+            const sel = document.getElementById('camSelect');
+            const camIdx = sel.value !== '' ? parseInt(sel.value) : 0;
+            const feed = document.getElementById('webcamFeed');
+            const errEl = document.getElementById('camError');
+            const statusBar = document.getElementById('camStatusBar');
+            const connecting = document.getElementById('camConnecting');
+
+            errEl.classList.add('hidden');
+            connecting.classList.remove('hidden');
+            statusBar.classList.remove('hidden');
+            statusBar.classList.add('flex');
+
+            setCamBadge('connecting');
+            document.getElementById('camStartBtn').disabled = true;
+            document.getElementById('camStopBtn').disabled = false;
+
+            // Reset stats
+            document.getElementById('camHoleCount').textContent = '—';
+            document.getElementById('camConfidence').textContent = '—';
+
+            _camActive = true;
+            feed.classList.remove('hidden');
+            // Append timestamp to bust browser cache and force fresh stream
+            document.getElementById('webcamImg').src = `/webcam-feed?camera_index=${camIdx}&t=${Date.now()}`;
+
+            // Poll /webcam-stats every second to update the stats panel
+            if (window._camStatsTimer) clearInterval(window._camStatsTimer);
+            window._camStatsTimer = setInterval(async () => {
+                if (!_camActive) { clearInterval(window._camStatsTimer); return; }
+                try {
+                    const s = await api(`/webcam-stats`);
+                    if (s && typeof s.hole_count !== 'undefined') {
+                        document.getElementById('camHoleCount').textContent = s.hole_count;
+                        document.getElementById('camConfidence').textContent =
+                            s.hole_count > 0 ? (s.max_confidence * 100).toFixed(0) + '%' : '0%';
+                        document.getElementById('camConfidence').className =
+                            s.hole_count > 0
+                                ? 'text-xl font-bold text-red-400'
+                                : 'text-xl font-bold text-green-400';
+                    }
+                } catch { /* ignore if endpoint missing */ }
+            }, 1000);
+        }
+
+        function stopWebcam() {
+            _camActive = false;
+            if (window._camStatsTimer) clearInterval(window._camStatsTimer);
+            const img = document.getElementById('webcamImg');
+            img.src = '';
+            document.getElementById('webcamFeed').classList.add('hidden');
+            document.getElementById('camStatusBar').classList.add('hidden');
+            document.getElementById('camStatusBar').classList.remove('flex');
+            setCamBadge('stopped');
+            document.getElementById('camStartBtn').disabled = false;
+            document.getElementById('camStopBtn').disabled = true;
+            document.getElementById('camHoleCount').textContent = '—';
+            document.getElementById('camConfidence').textContent = '—';
+        }
+
+        // ── tabs ──────────────────────────────────────────────────────
+        function switchTab(name) {
+            if (name !== 'cam') stopWebcam();
+            const tabs = { img: 'tabImg', vid: 'tabVid', cam: 'tabCam' };
+            const panels = { img: 'panelImg', vid: 'panelVid', cam: 'panelCam' };
+            Object.keys(tabs).forEach(t => {
+                const isActive = t === name;
+                const btn = document.getElementById(tabs[t]);
+                btn.classList.toggle('tab-active', isActive);
+                btn.classList.toggle('text-slate-400', !isActive);
+                btn.classList.toggle('hover:text-slate-200', !isActive);
+                document.getElementById(panels[t]).classList.toggle('hidden', !isActive);
+            });
+        }
+
+        // ── helpers ───────────────────────────────────────────────────
+        function showResultError(el, msg) {
+            el.className = 'block rounded-xl p-5 bg-yellow-500/10 border border-yellow-500/30';
+            el.innerHTML = `<p class="font-bold text-yellow-300 mb-1">⚠ Error</p><p class="text-sm text-slate-400">${esc(msg)}</p>`;
+        }
+
+        function setStatus(el, msg, type) {
+            const map = {
+                ok: 'bg-green-500/10 border border-green-500/30 text-green-300',
+                warn: 'bg-red-500/10 border border-red-500/30 text-red-300',
+                info: 'bg-indigo-500/10 border border-indigo-500/30 text-indigo-300',
+            };
+            el.className = `block px-4 py-3 rounded-xl text-sm mt-2 ${map[type] || map.info}`;
+            el.textContent = msg;
+        }
+
+        async function api(url, method = 'GET', body = null) {
+            const opts = { method };
+            if (body) opts.body = body;
+            const res = await fetch(url, opts);
+            if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.message || res.statusText); }
+            return res.json();
+        }
+
+        function updateFileName(inp, id) { document.getElementById(id).textContent = inp.files[0]?.name || 'Choose file…'; }
+        function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+    </script>
+</body>
+
+</html>
