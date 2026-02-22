@@ -202,7 +202,7 @@ async def train_status():
     return training_state
 
 
-# ── Routes: Detection ─────────────────────────────────────────────────────────
+# ── Routes: Detection ────────────────────────────────────────────────────────
 @app.post("/detect-image")
 async def detect_image_endpoint(file: UploadFile = File(...)):
     """Detect holes in a single uploaded image."""
